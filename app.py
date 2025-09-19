@@ -104,14 +104,24 @@ def get_sample_status(sample_id):
         sample = db.samples.find_one({"sample_id": sample_id})
         if not sample:
             return jsonify({"error": "Sample not found"}), 404
-            
+
+        # Check if results exist for the sample
+        result = db.results.find_one({"sample_id": sample_id})
+        if result:
+            # Update sample status to 'analyzed'
+            db.samples.update_one(
+                {"sample_id": sample_id},
+                {"$set": {"status": "analyzed", "updated_at": datetime.now()}}
+            )
+            sample["status"] = "analyzed"
+
         return jsonify({
             "sample_id": sample_id,
             "status": sample["status"],
             "created_at": sample["created_at"],
             "updated_at": sample["updated_at"]
         })
-        
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
