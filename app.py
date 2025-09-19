@@ -6,6 +6,39 @@ from dotenv import load_dotenv
 import torch
 from datetime import datetime
 import uuid
+# from notebook_importer import import_notebook
+import nbformat
+from nbconvert import PythonExporter
+import importlib.util
+import os
+import json
+
+
+
+# Define taxa as a list of taxonomy labels
+taxa = ["Taxon1", "Taxon2", "Taxon3", "Taxon4"]  # Replace with actual taxonomy labels
+roles = ["Role1", "Role2", "Role3", "Role4"]  # Replace with actual taxonomy labels
+def load_notebook_as_module(notebook_path, module_name):
+    with open(notebook_path, 'r', encoding='utf-8') as f:
+        notebook_content = f.read()
+    notebook = nbformat.reads(notebook_content, as_version=4)
+    python_exporter = PythonExporter()
+    python_code, _ = python_exporter.from_notebook_node(notebook)
+
+    module_path = f"{module_name}.py"
+    with open(module_path, 'w', encoding='utf-8') as f:
+        f.write(python_code)
+
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    os.remove(module_path)  # Clean up the temporary Python file
+    return module
+
+model_notebook = load_notebook_as_module('model.ipynb', 'model')
+MultiTaskTaxonomyModel = model_notebook.MultiTaskTaxonomyModel
+KmerTokenizer = model_notebook.KmerTokenizer
 
 # Load environment variables
 load_dotenv()
@@ -139,9 +172,63 @@ def get_all_samples():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/v1/analyze-result', methods=['POST'])
+def analyze_result():
+    try:
+        # Get sample_id from request
+        sample_id = request.json.get('sample_id')
+        if not sample_id:
+            return jsonify({"error": "No sample ID provided"}), 400
+
+        # Fetch sample from database
+        sample = db.samples.find_one({"sample_id": sample_id})
+        if not sample:
+            return jsonify({"error": "Sample not found"}), 404
+
+        # Load the model and tokenizer
+        model_state, tokenizer_vocab = load_model()
+        model = MultiTaskTaxonomyModel(vocab_size=len(tokenizer_vocab))
+        model.load_state_dict(model_state)
+        model.eval()
+
+        tokenizer = KmerTokenizer(k=4)
+        # Fetch metadata and ensure it's a dictionary
+        metadata = sample.get('metadata', {})
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                return jsonify({"error": "Invalid metadata format"}), 400
+        
+        seq = metadata.get('sequence', '')
+        tokens = torch.tensor(tokenizer.encode(seq), dtype=torch.long).unsqueeze(0)
+        mask = torch.zeros(1, tokens.size(1), dtype=torch.bool)
+
+        # Perform inference
+        with torch.no_grad():
+            output = model(tokens, src_key_padding_mask=~mask)
+
+        # Prepare results
+        results = {
+            "tax_prediction": taxa[output['tax_logits'].argmax(dim=1).item()],
+            "role_prediction": roles[output['role_logits'].argmax(dim=1).item()],
+            "novel_score": torch.sigmoid(output['novel_logits']).item()
+        }
+
+        # Store results in database
+        db.results.insert_one({"sample_id": sample_id, "results": results})
+
+        return jsonify({"message": "Analysis completed", "results": results}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     # Create uploads directory if it doesn't exist
     os.makedirs('uploads', exist_ok=True)
     
     # Run the Flask app
     app.run(debug=True, host='0.0.0.0', port=5000)
+
+# Define taxa as a list of taxonomy labels
+taxa = ["Taxon1", "Taxon2", "Taxon3", "Taxon4"]  # Replace with actual taxonomy labels
