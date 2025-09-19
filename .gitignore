@@ -45,7 +45,7 @@ Thumbs.db
 # Uploaded / generated data
 uploads/
 *.fasta
-*.txt
+
 
 # Model files
 *.pth
