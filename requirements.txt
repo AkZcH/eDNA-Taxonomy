@@ -10,3 +10,5 @@ pytest>=6.2.5
 gunicorn>=20.1.0
 python-jose>=3.3.0
 python-multipart>=0.0.5
+nbformat
+notebook
