@@ -130,6 +130,14 @@ def get_taxonomy_tree():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/api/v1/samples/get_all', methods=['GET'])
+def get_all_samples():
+    try:
+        samples = list(db.samples.find({}, {"_id": 0}))
+        return jsonify({"samples": samples})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # Create uploads directory if it doesn't exist
