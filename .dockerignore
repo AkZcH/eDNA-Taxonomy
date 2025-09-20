@@ -1,0 +1,9 @@
+# Exclude unnecessary files and directories
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+/tests
